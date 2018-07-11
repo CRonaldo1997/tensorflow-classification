@@ -1,0 +1,63 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+from nets import nets_factory
+from preprocessing import preprocessing_factory
+import tensorflow as tf
+
+slim = tf.contrib.slim
+from glob import glob
+import cv2
+from PIL import Image
+import io
+
+RESNET_MODEL_DIR = '..my_resnet_model_dir'
+
+class YYZZClass:
+    def __init__(self):
+        tf_global_step = slim.get_or_create_global_step()
+        self.model_name = 'inception_resnet_v2'
+        network_fn = nets_factory.get_network_fn(
+            self.model_name,
+            num_classes = 2,
+            is_training = False
+        )
+        self.test_image_size = network_fn.default_image_size
+        self.checkpoint_path = RESNET_MODEL_DIR
+        checkpoint_path = tf.train.latest_checkpoint(self.checkpoint_path)
+        self.tensor_input = tf.placeholder(tf.float32,[None,self.test_image_size,self.test_image_size,3])
+        self.logits, _ = network_fn(self.tensor_input)
+        self.logits = tf.nn.top_k(self.logits,2)
+
+        self.config = tf.ConfigProto()
+        self.config.gpu_options.allow_growth = True
+        self.__session = tf.Session(config = self.config)
+        self.__session.run(tf.global_variables_initializer())
+        saver = tf.train.Saver()
+        saver.restore(self.__session, checkpoint_path)
+
+    def jugdeclass(self,img):
+        if img.any():
+            images = []
+            bytes = io.BytesIO()
+            img = Image.fromarray(img)
+            img.save(bytes,format = 'png')
+            image = tf.image.decode_jpeg(bytes.getvalue(),channels=3)
+            preprocessing_name = self.model_name
+            print(preprocessing_name)
+            image_preprocessing_fn = preprocessing_factory.get_preprocessing(preprocessing_name,is_training=False)
+            processed_image = image_preprocessing_fn(image,self.test_image_size,self.test_image_size)
+            processed_image = self.__session.run(processed_image)
+            images.append(processed_image)
+            predictions = self.__session.run(self.logits,feed_dict={self.tensor_input:images}).indices
+            print(predictions[0].tolist())
+            if predictions[0].tolist()[0]==1:
+                return True
+            else:
+                return False
+
+    if __name__ == '__main__':
+        im = open('../../1.jpg','rb').read()
+        classmodel = YYZZClass()
+        classmodel.jugdeclass(im)
